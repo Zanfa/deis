@@ -52,7 +52,7 @@ setup(name='deis',
           'Topic :: Internet',
           'Topic :: System :: Systems Administration',
       ],
-      py_modules=['deis'],
+      py_modules=['deis', 'text_progress'],
       data_files=[
           ('.', ['README.rst']),
       ],
