@@ -38,6 +38,7 @@ Use ``git push deis master`` to deploy to a formation.
 
 """
 
+from __future__ import print_function
 from cookielib import MozillaCookieJar
 from getpass import getpass
 import glob
@@ -54,8 +55,12 @@ from docopt import docopt
 from docopt import DocoptExit
 import requests
 
+from text_progress import TextProgress
+
 
 __version__ = '0.0.5'
+
+progress = TextProgress()
 
 
 class Session(requests.Session):
@@ -235,10 +240,15 @@ class DeisClient(object):
         """
         Dispatch an API request to the active Deis controller
         """
-        func = getattr(self._session, method.lower())
-        url = urlparse.urljoin(self._settings['controller'], path, **kwargs)
-        response = func(url, data=body, headers=headers)
-        return response
+        try:
+            func = getattr(self._session, method.lower())
+            url = urlparse.urljoin(self._settings['controller'], path, **kwargs)
+            response = func(url, data=body, headers=headers)
+            return response
+        finally:
+            progress.cancel()
+            progress.join()
+            print()
 
     def auth_register(self, args):
         """
@@ -274,12 +284,12 @@ class DeisClient(object):
             if self.auth_login(login_args) is False:
                 print('Login failed')
                 return
-            print
+            print()
             self.keys_add({})
-            print
+            print()
             self.providers_discover({})
-            print
-            print 'Use `deis create --flavor=ec2-us-east-1` to create a new formation'
+            print()
+            print('Use `deis create --flavor=ec2-us-east-1` to create a new formation')
         else:
             print('Registration failed', response.content)
             return False
@@ -499,13 +509,13 @@ class DeisClient(object):
             c_map = {}
             for item in data['results']:
                 c_map.setdefault(item['type'], []).append(item)
-            print
+            print()
             for c_type in c_map.keys():
                 command = procfile.get(c_type, '<none>')
                 print("--- {c_type}: `{command}`".format(**locals()))
                 for c in c_map[c_type]:
                     print("{type}.{num} up {created} ({node})".format(**c))
-                print
+                print()
         else:
             print('Error!', response.text)
 
@@ -608,7 +618,7 @@ class DeisClient(object):
         if response.status_code == requests.codes.ok:  # @UndefinedVariable
             data = response.json()
             if data['count'] == 0:
-                print 'No flavors found'
+                print('No flavors found')
                 return
             print("=== {owner} Flavors".format(**data['results'][0]))
             for item in data['results']:
@@ -646,7 +656,7 @@ class DeisClient(object):
         try:
             self._session.git_root()  # check for a git repository
         except EnvironmentError:
-            print 'No git repository found, use `git init` to create one'
+            print('No git repository found, use `git init` to create one')
             return
         for opt in ('--id',):
             o = args.get(opt)
@@ -657,7 +667,7 @@ class DeisClient(object):
         if flavor:
             response = self._dispatch('get', '/api/flavors/{}'.format(flavor))
             if response.status_code != 200:
-                print 'Flavor not found'
+                print('Flavor not found')
                 return
         sys.stdout.write('Creating formation... ')
         sys.stdout.flush()
@@ -679,7 +689,7 @@ class DeisClient(object):
             print('Git remote deis added')
             # create default layers if a flavor was provided
             if flavor:
-                print
+                print()
                 self.layers_create({'<id>': 'runtime', '<flavor>': flavor})
                 self.layers_create({'<id>': 'proxy', '<flavor>': flavor})
                 print('\nUse `deis layers:scale proxy=1 runtime=1` to scale a basic formation')
@@ -699,12 +709,12 @@ class DeisClient(object):
         if response.status_code == requests.codes.ok:  # @UndefinedVariable
             data = response.json()
             print("=== {} Formation".format(formation))
-            print
+            print()
             args = {'<formation>': data['id']}
             self.layers_list(args)
-            print
+            print()
             self.nodes_list(args)
-            print
+            print()
             self.containers_list(args)
         else:
             print('Error!', response.text)
@@ -719,7 +729,7 @@ class DeisClient(object):
         if response.status_code == requests.codes.ok:  # @UndefinedVariable
             data = response.json()
             if data['count'] == 0:
-                print 'No formations found'
+                print('No formations found')
                 return
             print("=== {owner} Formations".format(**data['results'][0]))
             for item in data['results']:
@@ -744,11 +754,11 @@ class DeisClient(object):
         if confirm == formation:
             pass
         else:
-            print """
+            print("""
  !    WARNING: Potentially Destructive Action
  !    This command will destroy: {formation}
  !    To proceed, type "{formation}" or re-run this command with --confirm={formation}
-""".format(**locals())
+""".format(**locals()))
             confirm = raw_input('> ').strip('\n')
             if confirm != formation:
                 print('Destroy aborted')
@@ -848,13 +858,13 @@ class DeisClient(object):
                 path = pubkeys[int(inp) - 1]
                 key_id = path.split(os.path.sep)[-1].replace('.pub', '')
             except:
-                print 'Aborting'
+                print('Aborting')
                 return
         with open(path) as f:
             data = f.read()
         match = re.match(r'^(ssh-...) ([^ ]+) (.+)', data)
         if not match:
-            print 'Could not parse public key material'
+            print('Could not parse public key material')
             return
         key_type, key_str, _key_comment = match.groups()
         body = {'id': key_id, 'public': "{0} {1}".format(key_type, key_str)}
@@ -876,7 +886,7 @@ class DeisClient(object):
         if response.status_code == requests.codes.ok:  # @UndefinedVariable
             data = response.json()
             if data['count'] == 0:
-                print 'No keys found'
+                print('No keys found')
                 return
             print("=== {owner} Keys".format(**data['results'][0]))
             for key in data['results']:
@@ -1164,7 +1174,7 @@ class DeisClient(object):
             print("Found EC2 credentials: {}".format(os.environ['AWS_ACCESS_KEY']))
             inp = raw_input('Import these credentials? (y/n) : ')
             if inp.lower().strip('\n') != 'y':
-                print 'Aborting.'
+                print('Aborting.')
                 return
             creds = {'access_key': os.environ['AWS_ACCESS_KEY'],
                      'secret_key': os.environ['AWS_SECRET_KEY']}
@@ -1174,11 +1184,11 @@ class DeisClient(object):
             response = self._dispatch('patch', '/api/providers/ec2',
                                       json.dumps(body))
             if response.status_code == requests.codes.ok:  # @UndefinedVariable
-                print 'done'
+                print('done')
             else:
                 print('Error!', response.text)
         else:
-            print 'No credentials discovered, did you install the EC2 Command Line tools?'
+            print('No credentials discovered, did you install the EC2 Command Line tools?')
             return
 
     def providers_info(self, args):
@@ -1204,7 +1214,7 @@ class DeisClient(object):
         if response.status_code == requests.codes.ok:  # @UndefinedVariable
             data = response.json()
             if data['count'] == 0:
-                print 'No providers found'
+                print('No providers found')
                 return
             print("=== {owner} Providers".format(**data['results'][0]))
             for item in data['results']:
@@ -1313,7 +1323,7 @@ def main():
     if help_flag:
         if cmd != 'help':
             if cmd in dir(cli):
-                print trim(getattr(cli, cmd).__doc__)
+                print(trim(getattr(cli, cmd).__doc__))
                 return
         docopt(__doc__, argv=['--help'])
     # re-parse docopt with the relevant docstring
@@ -1328,10 +1338,10 @@ def main():
         raise DocoptExit('Found no matching command')
     # dispatch the CLI command
     try:
+        progress.start()
         method(args)
     except EnvironmentError:
-        print 'Could not find git remote for deis'
-        raise DocoptExit()
+        raise DocoptExit('Could not find git remote for deis')
 
 
 if __name__ == '__main__':
